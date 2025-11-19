@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
-// Dependencies: lucide-react, firebase
-
-// แยกบรรทัด Import เพื่อป้องกัน Vercel Build Error
+// Import ไอคอนและไลบรารีที่จำเป็น (ส่วนหัวที่อาจจะหายไป)
 import { Plus, Wallet, TrendingUp, TrendingDown, Trash2, DollarSign } from 'lucide-react';
 import { Activity, Briefcase, Coffee, Home, ShoppingBag } from 'lucide-react';
 import { FileSpreadsheet, Cloud, Loader2, HandCoins, ArrowRightLeft } from 'lucide-react';
@@ -17,26 +15,22 @@ import {
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 // ------------------------------------------------------------------
-// ⚙️ ส่วนการตั้งค่า Firebase (Config)
+// 🔑 ส่วนการตั้งค่า Firebase (เจมี่ใส่รหัสของปาร์คเกอร์ให้แล้ว!)
 // ------------------------------------------------------------------
-
-// 1. Config สำหรับ Standalone (สำหรับการนำไปใช้จริง ใส่ของคุณตรงนี้)
-// ⚠️⚠️⚠️ เอารหัสจาก Firebase มาแปะทับตรงนี้ให้หมดเลยนะคะ! ⚠️⚠️⚠️
 const manualConfig = {
   apiKey: "AIzaSyB8hiKkgTJVd16rjosL-um4q-1ZEfcAsDQ",
   authDomain: "parker-wallet.firebaseapp.com",
   projectId: "parker-wallet",
   storageBucket: "parker-wallet.firebasestorage.app",
   messagingSenderId: "275755260782",
-  appId: "1:275755260782:web:38afbe5888f006a6c2bf7f",
-  measurementId: "G-DGL49EFNRT"
+  appId: "1:275755260782:web:38afbe5888f006a6c2bf7f"
 };
 
-// 2. Logic ตรวจสอบสภาพแวดล้อม
+// Logic ตรวจสอบสภาพแวดล้อม
 const isPreviewEnv = typeof __firebase_config !== 'undefined';
 const firebaseConfig = isPreviewEnv ? JSON.parse(__firebase_config) : manualConfig;
 
-// 🛠️ FIX: กรองตัวอักษรพิเศษออกจาก appId เพื่อป้องกัน Error: Invalid collection reference
+// แก้ไข App ID ให้ปลอดภัยสำหรับ Firestore Path
 const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 const appId = rawAppId.replace(/[^a-zA-Z0-9_-]/g, '_');
 
@@ -115,6 +109,8 @@ const App = () => {
 
   // Auth & Data Sync
   useEffect(() => {
+    const timer = setTimeout(() => { if (!user && loading) setLoading(false); }, 5000); // 5วิ หยุดหมุนถ้าเข้าไม่ได้
+
     const initAuth = async () => {
       try {
         if (isPreviewEnv && typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
@@ -122,7 +118,7 @@ const App = () => {
         } else {
           await signInAnonymously(auth);
         }
-      } catch (err) { console.error("Auth Error", err); }
+      } catch (err) { console.error("Auth Error", err); setLoading(false); }
     };
     initAuth();
     return onAuthStateChanged(auth, (currentUser) => setUser(currentUser));
@@ -137,14 +133,14 @@ const App = () => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       data.sort((a, b) => new Date(b.date) - new Date(a.date));
       setTransactions(data);
-    });
+      setLoading(false);
+    }, (err) => { console.error(err); setLoading(false); });
 
     const qDebts = query(getCollectionRef(user.uid, 'debts'));
     const unsubDebts = onSnapshot(qDebts, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       data.sort((a, b) => (a.isSettled === b.isSettled ? new Date(b.date) - new Date(a.date) : a.isSettled ? 1 : -1));
       setDebts(data);
-      setLoading(false);
     });
 
     return () => { unsubTrans(); unsubDebts(); };
@@ -230,11 +226,9 @@ const App = () => {
   const deleteTransaction = async (id) => { if (user) await deleteDoc(getDocRef(user.uid, 'transactions', id)); };
   const deleteDebt = async (id) => { if (user) await deleteDoc(getDocRef(user.uid, 'debts', id)); };
 
-  // Utilities
   const formatCurrency = (num) => new Intl.NumberFormat('th-TH', { style: 'currency', currency: 'THB' }).format(num);
   const formatDate = (str) => new Intl.DateTimeFormat('th-TH', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(str));
 
-  // Dashboard
   const getMonthlyStats = () => {
     const stats = {};
     transactions.forEach(t => {
@@ -247,7 +241,26 @@ const App = () => {
     return Object.values(stats).sort((a, b) => b.key.localeCompare(a.key));
   };
 
-  if (!user && loading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin text-blue-600" /></div>;
+  // LOGIN FALLBACK UI (ถ้าเข้าไม่ได้ ให้กดปุ่มนี้)
+  if (!user && !loading) return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-6 text-center">
+        <div className="bg-white p-8 rounded-2xl shadow-xl border border-blue-100 max-w-sm w-full">
+            <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-blue-600">
+                <Wallet size={32}/>
+            </div>
+            <h2 className="text-2xl font-bold text-gray-800 mb-2">Parker's Wallet</h2>
+            <p className="text-gray-500 mb-6">เชื่อมต่อไม่สำเร็จ ลองกดปุ่มด้านล่างใหม่นะคะ</p>
+            <button 
+                onClick={() => { setLoading(true); signInAnonymously(auth).catch(alert); }}
+                className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg hover:bg-blue-700 active:scale-95"
+            >
+                ลองเชื่อมต่ออีกครั้ง 🔄
+            </button>
+        </div>
+      </div>
+  );
+
+  if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-blue-600" size={40}/></div>;
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-800 pb-24 md:pb-0">
@@ -257,7 +270,7 @@ const App = () => {
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold">Parker's Wallet Pro 🚀</h1>
             <div className="bg-white/20 backdrop-blur-sm px-2 py-0.5 rounded-full flex items-center gap-1">
-               {loading ? <Loader2 size={12} className="animate-spin" /> : <Cloud size={12} />}
+               <Cloud size={12} />
             </div>
           </div>
         </div>
