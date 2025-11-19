@@ -22,12 +22,12 @@ import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 // 1. Config สำหรับ Standalone (สำหรับการนำไปใช้จริง ใส่ของคุณตรงนี้)
 const manualConfig = {
-  apiKey: "AIzaSy... (อย่าลืมใส่ API Key ของคุณเองนะ!)",
-  authDomain: "your-app.firebaseapp.com",
-  projectId: "your-app",
-  storageBucket: "your-app.appspot.com",
-  messagingSenderId: "...",
-  appId: "..."
+  apiKey: "AIzaSyB8hiKkgTJVd16rjosL-um4q-1ZEfcAsDQ",
+  authDomain: "parker-wallet.firebaseapp.com",
+  projectId: "parker-wallet",
+  storageBucket: "parker-wallet.firebasestorage.app",
+  messagingSenderId: "275755260782",
+  appId: "1:275755260782:web:38afbe5888f006a6c2bf7f"
 };
 
 // 2. Logic ตรวจสอบสภาพแวดล้อม (แก้ไข App ID ให้ปลอดภัย)
@@ -425,3 +425,4 @@ const App = () => {
 };
 
 export default App;
+
