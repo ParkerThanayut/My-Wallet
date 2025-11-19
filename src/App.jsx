@@ -2,9 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Wallet, TrendingUp, TrendingDown, Trash2, DollarSign } from 'lucide-react';
 import { Activity, Briefcase, Coffee, Home, ShoppingBag } from 'lucide-react';
 import { FileSpreadsheet, Cloud, Loader2, HandCoins, ArrowRightLeft } from 'lucide-react';
-import { CheckCircle2, User, X, Calendar, BarChart3 } from 'lucide-react';
+import { CheckCircle2, User, X, Calendar, BarChart3, RefreshCcw } from 'lucide-react';
 import { Image as ImageIcon } from 'lucide-react';
-import { AlertTriangle } from 'lucide-react'; // เพิ่มไอคอนแจ้งเตือน
 
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
@@ -12,7 +11,8 @@ import { getFirestore, collection, addDoc, deleteDoc, doc, query, onSnapshot, up
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 // ------------------------------------------------------------------
-// 🔑 ส่วนการตั้งค่า Firebase (ใส่รหัสของคุณตรงนี้!)
+// 🔑 ส่วนการตั้งค่า Firebase
+// (เอารหัสจากรูปที่แคปมาเมื่อกี้ มาแปะทับตรงนี้เลยนะคะ!)
 // ------------------------------------------------------------------
 const manualConfig = {
   apiKey: "AIzaSyB8hiKkgTJVd16rjosL-um4q-1ZEfcAsDQ",
@@ -69,7 +69,6 @@ const CATEGORIES = {
 const App = () => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState('');
   const [activeTab, setActiveTab] = useState('dashboard');
   
   const [transactions, setTransactions] = useState([]);
@@ -93,13 +92,10 @@ const App = () => {
 
   // Auth & Data Sync
   useEffect(() => {
-    // ตั้งเวลาจับผิด: ถ้าหมุนเกิน 5 วินาที ให้ฟ้อง Error
-    const timeout = setTimeout(() => {
-      if (loading && !user) {
-        setErrorMsg('รอนานผิดปกติ... ตรวจสอบรหัส Firebase หรือการเชื่อมต่อเน็ตนะคะ');
-        setLoading(false);
-      }
-    }, 8000);
+    // Safety Timeout: ถ้าหมุนเกิน 3 วินาที ให้เลิกหมุน (แก้ปัญหาจอขาวค้าง)
+    const timer = setTimeout(() => {
+       if (!user) setLoading(false); 
+    }, 3000);
 
     const initAuth = async () => {
       try {
@@ -110,17 +106,17 @@ const App = () => {
         }
       } catch (err) { 
         console.error("Auth Error", err);
-        setErrorMsg(`เข้าสู่ระบบไม่ได้: ${err.message}`);
+        // ถ้า Error ให้หยุดโหลดทันที เพื่อโชว์ปุ่ม Retry
         setLoading(false);
       }
     };
     initAuth();
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
-      if (currentUser) setErrorMsg(''); // ถ้าเข้าได้ ให้ลบ Error ทิ้ง
+      if (currentUser) setLoading(false);
     });
     
-    return () => { unsubscribe(); clearTimeout(timeout); }
+    return () => { unsubscribe(); clearTimeout(timer); }
   }, []);
 
   useEffect(() => {
@@ -132,43 +128,61 @@ const App = () => {
           const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
           data.sort((a, b) => new Date(b.date) - new Date(a.date));
           setTransactions(data);
-        }, (err) => { setErrorMsg("โหลดข้อมูลไม่ได้: " + err.message); setLoading(false); });
+          setLoading(false); // โหลดเสร็จให้หยุดหมุน
+        });
 
         const qDebts = query(getCollectionRef(user.uid, 'debts'));
         const unsubDebts = onSnapshot(qDebts, (snapshot) => {
           const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
           data.sort((a, b) => (a.isSettled === b.isSettled ? new Date(b.date) - new Date(a.date) : a.isSettled ? 1 : -1));
           setDebts(data);
-          setLoading(false);
         });
         return () => { unsubTrans(); unsubDebts(); };
     } catch (err) {
-        setErrorMsg("เกิดข้อผิดพลาด: " + err.message);
+        console.error(err);
         setLoading(false);
     }
   }, [user]);
 
+  const handleLoginRetry = () => {
+    setLoading(true);
+    signInAnonymously(auth).catch(e => {
+        console.error(e);
+        setLoading(false);
+        alert("เข้าไม่ได้อะ: " + e.message);
+    });
+  };
+
   // --- UI Rendering ---
-  // หน้าจอ Loading (หมุนๆ)
   if (loading) return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 text-blue-600">
       <Loader2 className="animate-spin mb-4" size={48} />
-      <p className="animate-pulse">กำลังเชื่อมต่อตู้เซฟ...</p>
+      <p className="animate-pulse font-bold">กำลังเปิดตู้เซฟ...</p>
     </div>
   );
 
-  // หน้าจอ Error (ถ้ามีปัญหา จะแสดงหน้านี้แทนจอขาว)
-  if (errorMsg) return (
+  // ถ้าไม่โหลดแล้ว แต่ยังไม่มี User แสดงว่า Login ไม่ผ่าน -> โชว์ปุ่มให้กดเอง
+  if (!user) return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-6 text-center">
-      <div className="bg-red-100 p-4 rounded-full mb-4 text-red-500"><AlertTriangle size={48}/></div>
-      <h2 className="text-xl font-bold text-gray-700 mb-2">เกิดข้อผิดพลาดจ้า</h2>
-      <p className="text-red-500 bg-white p-4 rounded-xl border border-red-200 shadow-sm max-w-md break-words">{errorMsg}</p>
-      <p className="text-sm text-gray-400 mt-4">ลองตรวจสอบ manualConfig ในไฟล์ App.jsx อีกทีนะ</p>
+      <div className="bg-white p-8 rounded-2xl shadow-xl border border-blue-100 max-w-sm w-full">
+        <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-blue-600">
+            <Wallet size={32}/>
+        </div>
+        <h2 className="text-2xl font-bold text-gray-800 mb-2">Parker's Wallet</h2>
+        <p className="text-gray-500 mb-6">พร้อมจัดการเงินให้ปังหรือยังคะ?</p>
+        <button 
+            onClick={handleLoginRetry}
+            className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg hover:bg-blue-700 transition-transform active:scale-95 flex items-center justify-center gap-2"
+        >
+            เข้าใช้งานทันที <ArrowRightLeft size={18}/>
+        </button>
+        <p className="text-xs text-gray-300 mt-4">System by Jamie AI</p>
+      </div>
     </div>
   );
 
   // ... (ส่วน Handlers และ Render ปกติ เหมือนเดิมด้านล่างนี้) ...
-  const handleImageUpload = async (file) => { /* ... */ };
+  const handleImageUpload = async (file) => { if (!file) return null; try { const storageRef = ref(storage, `users/${user.uid}/slips/${Date.now()}_${file.name}`); const snapshot = await uploadBytes(storageRef, file); return await getDownloadURL(snapshot.ref); } catch (error) { console.error("Upload failed:", error); alert("อัปโหลดรูปไม่ได้ (เปิด Storage ใน Firebase หรือยัง?)"); return null; } };
   const handleTransSubmit = async (e) => { e.preventDefault(); if (!amount || !category || !user) return; setIsUploading(true); try { const imageUrl = await handleImageUpload(image); await addDoc(getCollectionRef(user.uid, 'transactions'), { amount: Number(amount), description: description || (type === 'income' ? 'รายรับ' : 'รายจ่าย'), type, category, wallet, imageUrl, date: new Date().toISOString() }); setAmount(''); setDescription(''); setCategory(''); setImage(null); setShowForm(false); } catch (error) { console.error(error); } setIsUploading(false); };
   const handleDebtSubmit = async (e) => { e.preventDefault(); if (!debtAmount || !debtPerson || !user) return; await addDoc(getCollectionRef(user.uid, 'debts'), { totalAmount: Number(debtAmount), remainingAmount: Number(debtAmount), person: debtPerson, type: debtType, isSettled: false, history: [], date: new Date().toISOString() }); setDebtAmount(''); setDebtPerson(''); setShowDebtForm(false); };
   const handleRepayment = async () => { if (!repayModal || !repayAmount || !user) return; const payAmt = Number(repayAmount); if (payAmt <= 0) return; const newRemaining = Math.max(0, repayModal.remainingAmount - payAmt); const isFullyPaid = newRemaining === 0; await updateDoc(getDocRef(user.uid, 'debts', repayModal.id), { remainingAmount: newRemaining, isSettled: isFullyPaid, history: arrayUnion({ date: new Date().toISOString(), amount: payAmt, note: 'ผ่อนชำระ' }) }); if (repayModal.type === 'payable') { await addDoc(getCollectionRef(user.uid, 'transactions'), { amount: payAmt, description: `ผ่อนหนี้: ${repayModal.person}`, type: 'expense', category: 'debt_payment', wallet: 'cash', date: new Date().toISOString() }); } setRepayModal(null); setRepayAmount(''); };
@@ -182,7 +196,7 @@ const App = () => {
     <div className="min-h-screen bg-slate-50 font-sans text-slate-800 pb-24 md:pb-0">
       <div className="bg-gradient-to-r from-blue-600 to-indigo-700 p-6 pb-24 rounded-b-[2rem] shadow-lg text-white relative">
         <div className="flex justify-between items-center mb-4">
-          <div className="flex items-center gap-2"><h1 className="text-xl font-bold">Parker's Wallet Pro 🚀</h1><div className="bg-white/20 backdrop-blur-sm px-2 py-0.5 rounded-full flex items-center gap-1">{loading ? <Loader2 size={12} className="animate-spin" /> : <Cloud size={12} />}</div></div>
+          <div className="flex items-center gap-2"><h1 className="text-xl font-bold">Parker's Wallet Pro 🚀</h1><div className="bg-white/20 backdrop-blur-sm px-2 py-0.5 rounded-full flex items-center gap-1"><Cloud size={12} /></div></div>
         </div>
         <div className="text-center mb-2"><p className="text-sm text-blue-100">ความมั่งคั่งสุทธิ</p><h2 className="text-4xl font-bold">{formatCurrency(transactions.reduce((acc, t) => acc + (t.type === 'income' ? Number(t.amount) : -Number(t.amount)), 0))}</h2></div>
         <div className="flex gap-3 overflow-x-auto pb-2 mt-4 no-scrollbar" style={{scrollbarWidth: 'none'}}>{WALLETS.map(w => { const bal = transactions.filter(t => t.wallet === w.id).reduce((acc, t) => acc + (t.type === 'income' ? Number(t.amount) : -Number(t.amount)), 0); return ( <div key={w.id} className="flex-shrink-0 bg-white/10 backdrop-blur-md p-3 rounded-xl min-w-[120px] border border-white/10"><div className="flex items-center gap-1 mb-1"><div className={`w-2 h-2 rounded-full ${w.color}`}></div><span className="text-xs text-blue-50">{w.name}</span></div><p className="font-bold text-sm">{formatCurrency(bal)}</p></div> ) })}</div>
