@@ -1,7 +1,7 @@
 {
   "name": "parker-smart-wallet",
   "private": true,
-  "version": "2.0.0",
+  "version": "2.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -16,7 +16,8 @@
     "recharts": "^2.12.0",
     "jspdf": "^2.5.1",
     "jspdf-autotable": "^3.8.2",
-    "date-fns": "^3.3.1"
+    "date-fns": "^3.3.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/react": "^18.2.43",
