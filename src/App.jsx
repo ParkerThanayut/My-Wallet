@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-// Import ไอคอนและไลบรารีที่จำเป็น (ส่วนหัวที่ห้ามหาย!)
+// Import ไอคอนและไลบรารี
 import { Plus, Wallet, TrendingUp, TrendingDown, Trash2, DollarSign } from 'lucide-react';
 import { Activity, Briefcase, Coffee, Home, ShoppingBag } from 'lucide-react';
 import { FileSpreadsheet, Cloud, Loader2, HandCoins, ArrowRightLeft } from 'lucide-react';
 import { CheckCircle2, User, X, Calendar, BarChart3, RefreshCcw } from 'lucide-react';
 import { Image as ImageIcon } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
@@ -15,42 +16,26 @@ import {
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 // ------------------------------------------------------------------
-// 🔑 ส่วนการตั้งค่า Firebase (เจมี่ใส่รหัสจากรูปที่ส่งมาให้แล้ว!)
+// 🔑 การตั้งค่า Firebase (แบบบังคับใช้รหัสนี้เท่านั้น!)
 // ------------------------------------------------------------------
-const manualConfig = {
+const firebaseConfig = {
   apiKey: "AIzaSyB8hiKkgTJVd16rjosL-um4q-1ZEfcAsDQ",
   authDomain: "parker-wallet.firebaseapp.com",
   projectId: "parker-wallet",
   storageBucket: "parker-wallet.firebasestorage.app",
   messagingSenderId: "275755260782",
-  appId: "1:275755260782:web:38afbe5888f006a6c2bf7f",
-  measurementId: "G-DGL49EFNRT"
+  appId: "1:275755260782:web:38afbe5888f006a6c2bf7f"
 };
 
-// Logic ตรวจสอบสภาพแวดล้อม
-const isPreviewEnv = typeof __firebase_config !== 'undefined';
-const firebaseConfig = isPreviewEnv ? JSON.parse(__firebase_config) : manualConfig;
-
-// แก้ไข App ID ให้ปลอดภัยสำหรับ Firestore Path
-const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-const appId = rawAppId.replace(/[^a-zA-Z0-9_-]/g, '_');
-
-// Initialize Firebase
+// Initialize Firebase (เริ่มระบบทันที ไม่ต้องรอเช็ก Environment)
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
 
-// Helper Functions
-const getCollectionRef = (uid, colName) => {
-  if (isPreviewEnv) return collection(db, 'artifacts', appId, 'users', uid, colName);
-  return collection(db, 'users', uid, colName);
-};
-
-const getDocRef = (uid, colName, docId) => {
-  if (isPreviewEnv) return doc(db, 'artifacts', appId, 'users', uid, colName, docId);
-  return doc(db, 'users', uid, colName, docId);
-};
+// Helper Functions (แบบตรงไปตรงมา ไม่ซับซ้อน)
+const getCollectionRef = (uid, colName) => collection(db, 'users', uid, colName);
+const getDocRef = (uid, colName, docId) => doc(db, 'users', uid, colName, docId);
 
 // --- Constants ---
 const WALLETS = [
@@ -85,7 +70,7 @@ const App = () => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState('dashboard'); 
   
   // Data State
   const [transactions, setTransactions] = useState([]);
@@ -110,30 +95,27 @@ const App = () => {
 
   // Auth & Data Sync
   useEffect(() => {
-    // Safety Timeout: ถ้าหมุนเกิน 5 วินาที ให้เลิกหมุนและแสดงปุ่ม
-    const timer = setTimeout(() => {
-       if (!user) setLoading(false); 
-    }, 5000);
+    console.log("App starting..."); // เช็กว่าแอปเริ่มทำงานมั้ย
+    const timer = setTimeout(() => { if (!user && loading) setLoading(false); }, 5000);
 
     const initAuth = async () => {
       try {
-        if (isPreviewEnv && typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
+        // ลบส่วนเช็ก Environment ออก ใช้ Anonymous อย่างเดียวเลยเพื่อความชัวร์
+        await signInAnonymously(auth);
       } catch (err) { 
-        console.error("Auth Error", err);
+        console.error("Auth Error:", err);
         setErrorMsg(err.message);
         setLoading(false);
       }
     };
-    initAuth();
+    
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      console.log("Auth State Changed:", currentUser ? "User Found" : "No User");
       setUser(currentUser);
       if (currentUser) setLoading(false);
     });
     
+    initAuth();
     return () => { unsubscribe(); clearTimeout(timer); }
   }, []);
 
@@ -148,7 +130,8 @@ const App = () => {
           setTransactions(data);
           setLoading(false);
         }, (err) => {
-           console.error(err);
+           console.error("Firestore Error:", err);
+           setErrorMsg("โหลดข้อมูลไม่ได้: " + err.message);
            setLoading(false);
         });
 
@@ -158,9 +141,11 @@ const App = () => {
           data.sort((a, b) => (a.isSettled === b.isSettled ? new Date(b.date) - new Date(a.date) : a.isSettled ? 1 : -1));
           setDebts(data);
         });
+
         return () => { unsubTrans(); unsubDebts(); };
     } catch (err) {
-        console.error(err);
+        console.error("Setup Error:", err);
+        setErrorMsg(err.message);
         setLoading(false);
     }
   }, [user]);
@@ -182,7 +167,14 @@ const App = () => {
     </div>
   );
 
-  // LOGIN FALLBACK: ถ้าไม่โหลดแล้ว แต่ไม่มี User ให้กดปุ่มนี้
+  if (errorMsg) return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-6 text-center">
+      <div className="bg-red-100 p-4 rounded-full mb-4 text-red-500"><AlertTriangle size={48}/></div>
+      <h2 className="text-xl font-bold text-gray-700 mb-2">มีปัญหาขัดข้องจ้า</h2>
+      <p className="text-red-500 bg-white p-4 rounded-xl border border-red-200 shadow-sm max-w-md break-words">{errorMsg}</p>
+    </div>
+  );
+
   if (!user) return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-6 text-center">
       <div className="bg-white p-8 rounded-2xl shadow-xl border border-blue-100 max-w-sm w-full">
@@ -190,22 +182,18 @@ const App = () => {
             <Wallet size={32}/>
         </div>
         <h2 className="text-2xl font-bold text-gray-800 mb-2">Parker's Wallet</h2>
-        <p className="text-gray-500 mb-6">เชื่อมต่อตู้เซฟไม่สำเร็จ</p>
-        
-        {errorMsg && <p className="text-red-500 text-xs bg-red-50 p-2 rounded mb-4">{errorMsg}</p>}
-
+        <p className="text-gray-500 mb-6">เชื่อมต่อไม่สำเร็จ ลองกดปุ่มใหม่นะ</p>
         <button 
             onClick={handleLoginRetry}
             className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg hover:bg-blue-700 transition-transform active:scale-95 flex items-center justify-center gap-2"
         >
-            ลองเข้าใหม่อีกครั้ง <RefreshCcw size={18}/>
+            เข้าใช้งาน <RefreshCcw size={18}/>
         </button>
-        <p className="text-xs text-gray-400 mt-4">System by Jamie AI</p>
       </div>
     </div>
   );
 
-  // ... Handlers ...
+  // ... Handlers (ส่วนการทำงานหลัก) ...
   const handleImageUpload = async (file) => { if (!file) return null; try { const storageRef = ref(storage, `users/${user.uid}/slips/${Date.now()}_${file.name}`); const snapshot = await uploadBytes(storageRef, file); return await getDownloadURL(snapshot.ref); } catch (error) { console.error("Upload failed:", error); alert("อัปโหลดรูปไม่ได้ (อย่าลืมเปิด Storage ใน Firebase Console นะ)"); return null; } };
   const handleTransSubmit = async (e) => { e.preventDefault(); if (!amount || !category || !user) return; setIsUploading(true); try { const imageUrl = await handleImageUpload(image); await addDoc(getCollectionRef(user.uid, 'transactions'), { amount: Number(amount), description: description || (type === 'income' ? 'รายรับ' : 'รายจ่าย'), type, category, wallet, imageUrl, date: new Date().toISOString() }); setAmount(''); setDescription(''); setCategory(''); setImage(null); setShowForm(false); } catch (error) { console.error(error); } setIsUploading(false); };
   const handleDebtSubmit = async (e) => { e.preventDefault(); if (!debtAmount || !debtPerson || !user) return; await addDoc(getCollectionRef(user.uid, 'debts'), { totalAmount: Number(debtAmount), remainingAmount: Number(debtAmount), person: debtPerson, type: debtType, isSettled: false, history: [], date: new Date().toISOString() }); setDebtAmount(''); setDebtPerson(''); setShowDebtForm(false); };
@@ -218,6 +206,7 @@ const App = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-800 pb-24 md:pb-0">
+      {/* Header */}
       <div className="bg-gradient-to-r from-blue-600 to-indigo-700 p-6 pb-24 rounded-b-[2rem] shadow-lg text-white relative">
         <div className="flex justify-between items-center mb-4">
           <div className="flex items-center gap-2"><h1 className="text-xl font-bold">Parker's Wallet Pro 🚀</h1><div className="bg-white/20 backdrop-blur-sm px-2 py-0.5 rounded-full flex items-center gap-1">{loading ? <Loader2 size={12} className="animate-spin" /> : <Cloud size={12} />}</div></div>
