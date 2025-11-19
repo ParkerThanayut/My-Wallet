@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Wallet, TrendingUp, TrendingDown, Trash2, DollarSign, Edit2 } from 'lucide-react';
+import { Plus, Wallet, TrendingUp, TrendingDown, Trash2, DollarSign, Edit2, LogOut } from 'lucide-react';
 import { Activity, Briefcase, Coffee, Home, ShoppingBag, Star, Heart, Gift, Zap } from 'lucide-react';
 import { FileSpreadsheet, Cloud, Loader2, HandCoins, ArrowRightLeft } from 'lucide-react';
 import { CheckCircle2, User, X, Calendar, BarChart3, RefreshCcw, Settings } from 'lucide-react';
@@ -7,7 +7,8 @@ import { Image as ImageIcon } from 'lucide-react';
 import { AlertTriangle } from 'lucide-react';
 
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
+// เพิ่ม GoogleAuthProvider และ signInWithPopup
+import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
 import { 
   getFirestore, collection, addDoc, deleteDoc, doc, query, 
   onSnapshot, updateDoc, arrayUnion, setDoc, getDoc 
@@ -15,28 +16,32 @@ import {
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 // ------------------------------------------------------------------
-// 🔑 การตั้งค่า Firebase (ใส่ให้แล้ว)
+// 🔑 การตั้งค่า Firebase (ใส่รหัสของคุณตรงนี้เหมือนเดิม!)
 // ------------------------------------------------------------------
-const firebaseConfig = {
-  apiKey: "AIzaSyB8hiKkgTJVd16rjosL-um4q-1ZEfcAsDQ",
+const manualConfig = {
+  apiKey: "AIzaSy... (ใส่รหัสจาก Firebase ของคุณตรงนี้)",
   authDomain: "parker-wallet.firebaseapp.com",
   projectId: "parker-wallet",
   storageBucket: "parker-wallet.firebasestorage.app",
-  messagingSenderId: "275755260782",
-  appId: "1:275755260782:web:38afbe5888f006a6c2bf7f"
+  messagingSenderId: "...",
+  appId: "..."
 };
 
-// Initialize Firebase
+const isPreviewEnv = typeof __firebase_config !== 'undefined';
+const firebaseConfig = isPreviewEnv ? JSON.parse(__firebase_config) : manualConfig;
+const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+const appId = rawAppId.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+// Initialize
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
+const googleProvider = new GoogleAuthProvider(); // สร้างตัวยืนยันตัวตนด้วย Google
 
-// Helper Functions
-const getCollectionRef = (uid, colName) => collection(db, 'users', uid, colName);
-const getDocRef = (uid, colName, docId) => doc(db, 'users', uid, colName, docId);
+const getCollectionRef = (uid, colName) => isPreviewEnv ? collection(db, 'artifacts', appId, 'users', uid, colName) : collection(db, 'users', uid, colName);
+const getDocRef = (uid, colName, docId) => isPreviewEnv ? doc(db, 'artifacts', appId, 'users', uid, colName, docId) : doc(db, 'users', uid, colName, docId);
 
-// --- Constants ---
 const WALLETS = [
   { id: 'cash', name: 'เงินสด', color: 'bg-green-500' },
   { id: 'kbank', name: 'KBank', color: 'bg-emerald-600' },
@@ -47,7 +52,6 @@ const WALLETS = [
   { id: 'credit', name: 'บัตรเครดิต', color: 'bg-gray-600' }
 ];
 
-// ไอคอนให้เลือกสำหรับหมวดใหม่
 const AVAILABLE_ICONS = [
   { id: 'Star', icon: Star }, { id: 'Heart', icon: Heart }, { id: 'Gift', icon: Gift },
   { id: 'Zap', icon: Zap }, { id: 'Coffee', icon: Coffee }, { id: 'Home', icon: Home },
@@ -55,7 +59,6 @@ const AVAILABLE_ICONS = [
   { id: 'Activity', icon: Activity }
 ];
 
-// หมวดหมู่เริ่มต้น (Default)
 const DEFAULT_CATEGORIES = {
   income: [
     { id: 'freelance', name: 'งาน Freelance', icon: 'Briefcase', color: 'bg-emerald-100 text-emerald-600' },
@@ -74,22 +77,18 @@ const DEFAULT_CATEGORIES = {
   ]
 };
 
-// Map string icon names to components
-const IconMap = {
-  Plus, Wallet, TrendingUp, TrendingDown, Trash2, DollarSign, Activity, Briefcase, 
-  Coffee, Home, ShoppingBag, Star, Heart, Gift, Zap, HandCoins
-};
+const IconMap = { Plus, Wallet, TrendingUp, TrendingDown, Trash2, DollarSign, Activity, Briefcase, Coffee, Home, ShoppingBag, Star, Heart, Gift, Zap, HandCoins };
 
 const App = () => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
-  const [activeTab, setActiveTab] = useState('dashboard'); 
+  const [activeTab, setActiveTab] = useState('dashboard');
   
   // Data State
   const [transactions, setTransactions] = useState([]);
   const [debts, setDebts] = useState([]);
-  const [categories, setCategories] = useState(DEFAULT_CATEGORIES); // ใช้ State แทนค่าคงที่
+  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
   
   // Form State
   const [amount, setAmount] = useState('');
@@ -107,92 +106,70 @@ const App = () => {
   const [showDebtForm, setShowDebtForm] = useState(false);
   const [repayModal, setRepayModal] = useState(null);
   const [repayAmount, setRepayAmount] = useState('');
-
-  // Category Management State
+  
   const [showCatManager, setShowCatManager] = useState(false);
   const [newCatName, setNewCatName] = useState('');
   const [newCatIcon, setNewCatIcon] = useState('Star');
   const [newCatType, setNewCatType] = useState('expense');
 
-  // Auth & Data Sync
+  // Auth Logic (Google)
   useEffect(() => {
-    const timer = setTimeout(() => { if (!user && loading) setLoading(false); }, 5000);
-    const initAuth = async () => {
-      try { await signInAnonymously(auth); } catch (err) { setErrorMsg(err.message); setLoading(false); }
-    };
-    initAuth();
-    return onAuthStateChanged(auth, (currentUser) => { setUser(currentUser); if (currentUser) setLoading(false); });
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setLoading(false);
+    });
+    return () => unsubscribe();
   }, []);
 
+  const handleGoogleLogin = async () => {
+    setLoading(true);
+    setErrorMsg('');
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (err) {
+      console.error(err);
+      setErrorMsg("เข้าสู่ระบบไม่ได้: " + err.message);
+      setLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    await signOut(auth);
+    setTransactions([]);
+    setDebts([]);
+  };
+
+  // Data Sync
   useEffect(() => {
     if (!user) return;
     setLoading(true);
     
-    // 1. Load Transactions
     const qTrans = query(getCollectionRef(user.uid, 'transactions'));
     const unsubTrans = onSnapshot(qTrans, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       data.sort((a, b) => new Date(b.date) - new Date(a.date));
       setTransactions(data);
       setLoading(false);
-    });
+    }, (err) => { setErrorMsg(err.message); setLoading(false); });
 
-    // 2. Load Debts
     const qDebts = query(getCollectionRef(user.uid, 'debts'));
     const unsubDebts = onSnapshot(qDebts, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setDebts(data);
     });
 
-    // 3. Load Categories (ถ้ามี Custom จะโหลดมาทับ Default)
     const loadCategories = async () => {
       const docSnap = await getDoc(doc(db, 'users', user.uid, 'settings', 'categories'));
-      if (docSnap.exists()) {
-        setCategories(docSnap.data());
-      }
+      if (docSnap.exists()) { setCategories(docSnap.data()); }
     };
     loadCategories();
 
     return () => { unsubTrans(); unsubDebts(); };
   }, [user]);
 
-  // --- Handlers ---
-  const handleAddCategory = async () => {
-    if (!newCatName || !user) return;
-    
-    const newCat = {
-      id: Date.now().toString(),
-      name: newCatName,
-      icon: newCatIcon,
-      color: 'bg-gray-100 text-gray-600' // Default color
-    };
-
-    const updatedCategories = {
-      ...categories,
-      [newCatType]: [...categories[newCatType], newCat]
-    };
-
-    setCategories(updatedCategories); // Update UI immediately
-    
-    // Save to Firebase
-    try {
-      await setDoc(doc(db, 'users', user.uid, 'settings', 'categories'), updatedCategories);
-      setNewCatName('');
-      setShowCatManager(false);
-    } catch (error) {
-      console.error("Save category failed:", error);
-    }
-  };
-
-  const handleDeleteCategory = async (catId, catType) => {
-    if (!user) return;
-    const updatedList = categories[catType].filter(c => c.id !== catId);
-    const updatedCategories = { ...categories, [catType]: updatedList };
-    
-    setCategories(updatedCategories);
-    await setDoc(doc(db, 'users', user.uid, 'settings', 'categories'), updatedCategories);
-  };
-
+  // ... Handlers (Same as before) ...
+  const handleAddCategory = async () => { if (!newCatName || !user) return; const newCat = { id: Date.now().toString(), name: newCatName, icon: newCatIcon, color: 'bg-gray-100 text-gray-600' }; const updatedCategories = { ...categories, [newCatType]: [...categories[newCatType], newCat] }; setCategories(updatedCategories); try { await setDoc(doc(db, 'users', user.uid, 'settings', 'categories'), updatedCategories); setNewCatName(''); setShowCatManager(false); } catch (error) { console.error(error); } };
+  const handleDeleteCategory = async (catId, catType) => { if (!user) return; const updatedList = categories[catType].filter(c => c.id !== catId); const updatedCategories = { ...categories, [catType]: updatedList }; setCategories(updatedCategories); await setDoc(doc(db, 'users', user.uid, 'settings', 'categories'), updatedCategories); };
   const handleImageUpload = async (file) => { if (!file) return null; try { const storageRef = ref(storage, `users/${user.uid}/slips/${Date.now()}_${file.name}`); const snapshot = await uploadBytes(storageRef, file); return await getDownloadURL(snapshot.ref); } catch (error) { console.error("Upload failed:", error); return null; } };
   const handleTransSubmit = async (e) => { e.preventDefault(); if (!amount || !category || !user) return; setIsUploading(true); try { const imageUrl = await handleImageUpload(image); await addDoc(getCollectionRef(user.uid, 'transactions'), { amount: Number(amount), description: description || (type === 'income' ? 'รายรับ' : 'รายจ่าย'), type, category, wallet, imageUrl, date: new Date().toISOString() }); setAmount(''); setDescription(''); setCategory(''); setImage(null); setShowForm(false); } catch (error) { console.error(error); } setIsUploading(false); };
   const handleDebtSubmit = async (e) => { e.preventDefault(); if (!debtAmount || !debtPerson || !user) return; await addDoc(getCollectionRef(user.uid, 'debts'), { totalAmount: Number(debtAmount), remainingAmount: Number(debtAmount), person: debtPerson, type: debtType, isSettled: false, history: [], date: new Date().toISOString() }); setDebtAmount(''); setDebtPerson(''); setShowDebtForm(false); };
@@ -203,23 +180,46 @@ const App = () => {
   const formatDate = (str) => new Intl.DateTimeFormat('th-TH', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(str));
   const getMonthlyStats = () => { const stats = {}; transactions.forEach(t => { const date = new Date(t.date); const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`; if (!stats[key]) stats[key] = { income: 0, expense: 0, key }; if (t.type === 'income') stats[key].income += Number(t.amount); else stats[key].expense += Number(t.amount); }); return Object.values(stats).sort((a, b) => b.key.localeCompare(a.key)); };
 
-  // ... (Loading / Error / Login UI - Same as before) ...
-  if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-blue-600" size={40}/></div>;
-  if (!user && !loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><button onClick={() => signInAnonymously(auth)} className="btn bg-blue-500 text-white p-3 rounded">Login Retry</button></div>;
+  // LOGIN SCREEN (แสดงเมื่อยังไม่ Login)
+  if (!user) return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-6 text-center">
+      <div className="bg-white p-8 rounded-2xl shadow-xl border border-blue-100 max-w-sm w-full">
+        <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-blue-600">
+            <Wallet size={32}/>
+        </div>
+        <h2 className="text-2xl font-bold text-gray-800 mb-2">Parker's Wallet</h2>
+        <p className="text-gray-500 mb-6">ซิงค์ข้อมูลได้ทุกที่ แค่ล็อกอินด้วย Google</p>
+        
+        {errorMsg && <p className="text-red-500 text-xs bg-red-50 p-2 rounded mb-4">{errorMsg}</p>}
 
+        <button 
+            onClick={handleGoogleLogin}
+            className="w-full py-3 bg-white border border-gray-300 text-gray-700 rounded-xl font-bold shadow-sm hover:bg-gray-50 transition-transform active:scale-95 flex items-center justify-center gap-2"
+        >
+            <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-5 h-5" alt="Google"/>
+            Login with Google
+        </button>
+      </div>
+    </div>
+  );
+
+  if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-blue-600" size={40}/></div>;
+
+  // APP UI
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-800 pb-24 md:pb-0">
-      {/* Header */}
       <div className="bg-gradient-to-r from-blue-600 to-indigo-700 p-6 pb-24 rounded-b-[2rem] shadow-lg text-white relative">
         <div className="flex justify-between items-center mb-4">
-          <div className="flex items-center gap-2"><h1 className="text-xl font-bold">Parker's Wallet Pro 🚀</h1><div className="bg-white/20 backdrop-blur-sm px-2 py-0.5 rounded-full flex items-center gap-1"><Cloud size={12} /></div></div>
-          <button onClick={() => setShowCatManager(true)} className="bg-white/20 p-2 rounded-full hover:bg-white/30"><Settings size={20}/></button>
+          <div className="flex items-center gap-2"><h1 className="text-xl font-bold">Parker's Wallet</h1><div className="bg-white/20 backdrop-blur-sm px-2 py-0.5 rounded-full flex items-center gap-1"><Cloud size={12} /></div></div>
+          <div className="flex gap-2">
+            <button onClick={() => setShowCatManager(true)} className="bg-white/20 p-2 rounded-full hover:bg-white/30"><Settings size={20}/></button>
+            <button onClick={handleLogout} className="bg-white/20 p-2 rounded-full hover:bg-red-500/50 transition-colors"><LogOut size={20}/></button>
+          </div>
         </div>
         <div className="text-center mb-2"><p className="text-sm text-blue-100">ความมั่งคั่งสุทธิ</p><h2 className="text-4xl font-bold">{formatCurrency(transactions.reduce((acc, t) => acc + (t.type === 'income' ? Number(t.amount) : -Number(t.amount)), 0))}</h2></div>
         <div className="flex gap-3 overflow-x-auto pb-2 mt-4 no-scrollbar" style={{scrollbarWidth: 'none'}}>{WALLETS.map(w => { const bal = transactions.filter(t => t.wallet === w.id).reduce((acc, t) => acc + (t.type === 'income' ? Number(t.amount) : -Number(t.amount)), 0); return ( <div key={w.id} className="flex-shrink-0 bg-white/10 backdrop-blur-md p-3 rounded-xl min-w-[120px] border border-white/10"><div className="flex items-center gap-1 mb-1"><div className={`w-2 h-2 rounded-full ${w.color}`}></div><span className="text-xs text-blue-50">{w.name}</span></div><p className="font-bold text-sm">{formatCurrency(bal)}</p></div> ) })}</div>
       </div>
 
-      {/* Tabs */}
       <div className="px-4 -mt-8 relative z-20 mb-6"><div className="bg-white rounded-full shadow-lg p-1 flex justify-between">{[{ id: 'dashboard', label: 'ภาพรวม', icon: BarChart3 }, { id: 'transactions', label: 'จดบันทึก', icon: Wallet }, { id: 'debts', label: 'หนี้สิน', icon: HandCoins }].map(tab => ( <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex-1 py-2 rounded-full text-xs font-bold flex flex-col items-center gap-1 transition-all ${activeTab === tab.id ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-400 hover:bg-gray-50'}`}><tab.icon size={18} /> {tab.label}</button> ))}</div></div>
       
       <div className="p-4 max-w-md mx-auto pb-24">
@@ -228,7 +228,6 @@ const App = () => {
         {activeTab === 'debts' && ( <div className="animation-fade-in"><div className="grid grid-cols-2 gap-3 mb-6"><div className="bg-rose-50 p-3 rounded-xl border border-rose-100 text-center"><p className="text-xs text-rose-400">ต้องผ่อนเขา</p><p className="text-xl font-bold text-rose-600">{formatCurrency(debts.filter(d => d.type === 'payable' && !d.isSettled).reduce((acc, c) => acc + Number(c.remainingAmount), 0))}</p></div><div className="bg-emerald-50 p-3 rounded-xl border border-emerald-100 text-center"><p className="text-xs text-emerald-400">เขายืมเรา</p><p className="text-xl font-bold text-emerald-600">{formatCurrency(debts.filter(d => d.type === 'receivable' && !d.isSettled).reduce((acc, c) => acc + Number(c.remainingAmount), 0))}</p></div></div>{showDebtForm ? ( <div className="bg-white p-6 rounded-2xl shadow-md mb-6 border border-indigo-100"><h3 className="text-lg font-bold mb-4 text-gray-700">สร้างหนี้ก้อนใหม่</h3><div className="flex bg-gray-100 rounded-lg p-1 mb-4"><button onClick={() => setDebtType('payable')} className={`flex-1 py-2 rounded-md text-sm font-bold ${debtType === 'payable' ? 'bg-rose-500 text-white' : 'text-gray-500'}`}>ฉันยืมเขา (คืน)</button><button onClick={() => setDebtType('receivable')} className={`flex-1 py-2 rounded-md text-sm font-bold ${debtType === 'receivable' ? 'bg-emerald-500 text-white' : 'text-gray-500'}`}>เขายืมฉัน (ทวง)</button></div><input type="number" value={debtAmount} onChange={e=>setDebtAmount(e.target.value)} placeholder="จำนวนเงินต้น..." className="w-full p-3 text-xl font-bold bg-gray-50 rounded-xl mb-4 border outline-none" /><div className="relative mb-4"><User size={18} className="absolute left-3 top-3.5 text-gray-400"/><input type="text" value={debtPerson} onChange={e=>setDebtPerson(e.target.value)} placeholder="ชื่อคน / รายการหนี้" className="w-full p-3 pl-10 text-sm bg-gray-50 rounded-xl border outline-none" /></div><div className="flex gap-3"><button onClick={() => setShowDebtForm(false)} className="flex-1 py-3 bg-gray-100 rounded-xl text-gray-500">ยกเลิก</button><button onClick={handleDebtSubmit} disabled={!debtAmount || !debtPerson} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold">สร้างหนี้</button></div></div> ) : ( <button onClick={() => setShowDebtForm(true)} className="w-full bg-white border-2 border-dashed border-indigo-200 text-indigo-500 p-4 rounded-xl font-bold mb-6 flex justify-center gap-2 hover:bg-indigo-50"><Plus/> เพิ่มหนี้สิน</button> )}<div className="space-y-3">{debts.map(d => { const percent = ((d.totalAmount - d.remainingAmount) / d.totalAmount) * 100; return ( <div key={d.id} className={`bg-white p-4 rounded-xl shadow-sm border relative overflow-hidden ${d.isSettled ? 'opacity-60 border-gray-100' : 'border-gray-100'}`}><div className="flex justify-between items-start mb-2"><div className="flex items-center gap-3"><div className={`w-10 h-10 rounded-full flex items-center justify-center ${d.type === 'payable' ? 'bg-rose-100 text-rose-500' : 'bg-emerald-100 text-emerald-500'}`}>{d.isSettled ? <CheckCircle2 size={20}/> : <ArrowRightLeft size={20}/>}</div><div><p className="font-bold text-gray-700">{d.person}</p><p className="text-xs text-gray-400">ต้นเงิน: {formatCurrency(d.totalAmount)}</p></div></div><div className="text-right"><p className="text-xs text-gray-400">คงเหลือ</p><span className={`text-lg font-bold ${d.type === 'payable' ? 'text-rose-600' : 'text-emerald-600'}`}>{formatCurrency(d.remainingAmount)}</span></div></div><div className="w-full bg-gray-100 rounded-full h-2 mb-3"><div className={`h-2 rounded-full transition-all ${d.isSettled ? 'bg-green-500' : 'bg-blue-500'}`} style={{width: `${percent}%`}}></div></div>{!d.isSettled && (<button onClick={() => setRepayModal(d)} className="w-full py-2 bg-indigo-50 text-indigo-600 font-bold rounded-lg hover:bg-indigo-100 text-xs flex items-center justify-center gap-2"><HandCoins size={14}/> ทยอยจ่าย / รับเงินคืน</button>)}</div> ); })}</div></div> )}
       </div>
 
-      {/* Category Manager Modal */}
       {showCatManager && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -236,50 +235,13 @@ const App = () => {
               <h3 className="text-lg font-bold text-gray-800">จัดการหมวดหมู่</h3>
               <button onClick={() => setShowCatManager(false)}><X size={20} className="text-gray-400"/></button>
             </div>
-
-            <div className="flex bg-gray-100 rounded-lg p-1 mb-4">
-              <button onClick={() => setNewCatType('income')} className={`flex-1 py-2 rounded-md text-sm font-bold ${newCatType === 'income' ? 'bg-emerald-500 text-white' : 'text-gray-500'}`}>รายรับ</button>
-              <button onClick={() => setNewCatType('expense')} className={`flex-1 py-2 rounded-md text-sm font-bold ${newCatType === 'expense' ? 'bg-rose-500 text-white' : 'text-gray-500'}`}>รายจ่าย</button>
-            </div>
-
-            <div className="mb-4">
-              <label className="text-xs font-bold text-gray-600">ชื่อหมวดหมู่ใหม่</label>
-              <input type="text" value={newCatName} onChange={e=>setNewCatName(e.target.value)} placeholder="เช่น ค่ากาแฟ, ค่าหวย" className="w-full p-3 text-sm border rounded-xl mt-1 outline-none" />
-            </div>
-
+            {/* ... (Category Manager Content same as before) ... */}
+            <div className="flex bg-gray-100 rounded-lg p-1 mb-4"><button onClick={() => setNewCatType('income')} className={`flex-1 py-2 rounded-md text-sm font-bold ${newCatType === 'income' ? 'bg-emerald-500 text-white' : 'text-gray-500'}`}>รายรับ</button><button onClick={() => setNewCatType('expense')} className={`flex-1 py-2 rounded-md text-sm font-bold ${newCatType === 'expense' ? 'bg-rose-500 text-white' : 'text-gray-500'}`}>รายจ่าย</button></div>
+            <div className="mb-4"><label className="text-xs font-bold text-gray-600">ชื่อหมวดหมู่ใหม่</label><input type="text" value={newCatName} onChange={e=>setNewCatName(e.target.value)} placeholder="เช่น ค่ากาแฟ, ค่าหวย" className="w-full p-3 text-sm border rounded-xl mt-1 outline-none" /></div>
             <label className="text-xs font-bold text-gray-600 mb-2 block">เลือกไอคอน</label>
-            <div className="grid grid-cols-5 gap-2 mb-6">
-              {AVAILABLE_ICONS.map(icon => (
-                <button 
-                  key={icon.id} 
-                  onClick={() => setNewCatIcon(icon.id)}
-                  className={`p-2 rounded-lg flex items-center justify-center border ${newCatIcon === icon.id ? 'bg-blue-100 border-blue-500 text-blue-600' : 'border-gray-200'}`}
-                >
-                  <icon.icon size={20} />
-                </button>
-              ))}
-            </div>
-
+            <div className="grid grid-cols-5 gap-2 mb-6">{AVAILABLE_ICONS.map(icon => ( <button key={icon.id} onClick={() => setNewCatIcon(icon.id)} className={`p-2 rounded-lg flex items-center justify-center border ${newCatIcon === icon.id ? 'bg-blue-100 border-blue-500 text-blue-600' : 'border-gray-200'}`}><icon.icon size={20} /></button> ))}</div>
             <button onClick={handleAddCategory} disabled={!newCatName} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold mb-6">เพิ่มหมวดหมู่</button>
-
-            <div className="border-t pt-4">
-              <p className="text-xs font-bold text-gray-500 mb-2">รายการปัจจุบัน (กดเพื่อลบ)</p>
-              <div className="space-y-2">
-                {categories[newCatType].map(cat => (
-                  <div key={cat.id} className="flex justify-between items-center bg-gray-50 p-2 rounded-lg">
-                    <div className="flex items-center gap-2">
-                      {/* Fix: Use IconMap to render dynamic icon */}
-                      {(() => {
-                        const Icon = IconMap[cat.icon] || Wallet;
-                        return <Icon size={16} className="text-gray-500"/>;
-                      })()}
-                      <span className="text-sm">{cat.name}</span>
-                    </div>
-                    <button onClick={() => handleDeleteCategory(cat.id, newCatType)} className="text-red-400 hover:text-red-600"><X size={16}/></button>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <div className="border-t pt-4"><p className="text-xs font-bold text-gray-500 mb-2">รายการปัจจุบัน (กดเพื่อลบ)</p><div className="space-y-2">{categories[newCatType].map(cat => ( <div key={cat.id} className="flex justify-between items-center bg-gray-50 p-2 rounded-lg"><div className="flex items-center gap-2">{(() => { const Icon = IconMap[cat.icon] || Wallet; return <Icon size={16} className="text-gray-500"/>; })()}<span className="text-sm">{cat.name}</span></div><button onClick={() => handleDeleteCategory(cat.id, newCatType)} className="text-red-400 hover:text-red-600"><X size={16}/></button></div> ))}</div></div>
           </div>
         </div>
       )}
