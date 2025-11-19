@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 // Dependencies: lucide-react, firebase
 
-// แยกบรรทัด Import เพื่อป้องกัน Build Error
+// แยกบรรทัด Import เพื่อป้องกัน Vercel Build Error
 import { Plus, Wallet, TrendingUp, TrendingDown, Trash2, DollarSign } from 'lucide-react';
 import { Activity, Briefcase, Coffee, Home, ShoppingBag } from 'lucide-react';
 import { FileSpreadsheet, Cloud, Loader2, HandCoins, ArrowRightLeft } from 'lucide-react';
@@ -21,6 +21,7 @@ import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 // ------------------------------------------------------------------
 
 // 1. Config สำหรับ Standalone (สำหรับการนำไปใช้จริง ใส่ของคุณตรงนี้)
+// ⚠️⚠️⚠️ เอารหัสจาก Firebase มาแปะทับตรงนี้ให้หมดเลยนะคะ! ⚠️⚠️⚠️
 const manualConfig = {
   apiKey: "AIzaSyB8hiKkgTJVd16rjosL-um4q-1ZEfcAsDQ",
   authDomain: "parker-wallet.firebaseapp.com",
@@ -31,7 +32,7 @@ const manualConfig = {
   measurementId: "G-DGL49EFNRT"
 };
 
-// 2. Logic ตรวจสอบสภาพแวดล้อม (แก้ไข App ID ให้ปลอดภัย)
+// 2. Logic ตรวจสอบสภาพแวดล้อม
 const isPreviewEnv = typeof __firebase_config !== 'undefined';
 const firebaseConfig = isPreviewEnv ? JSON.parse(__firebase_config) : manualConfig;
 
@@ -88,13 +89,13 @@ const CATEGORIES = {
 const App = () => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, transactions, debts
+  const [activeTab, setActiveTab] = useState('dashboard'); 
   
   // Data State
   const [transactions, setTransactions] = useState([]);
   const [debts, setDebts] = useState([]);
   
-  // Transaction Form State
+  // Form State
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [type, setType] = useState('expense');
@@ -104,13 +105,11 @@ const App = () => {
   const [showForm, setShowForm] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
-  // Debt Form State
   const [debtAmount, setDebtAmount] = useState('');
   const [debtPerson, setDebtPerson] = useState('');
   const [debtType, setDebtType] = useState('payable');
   const [showDebtForm, setShowDebtForm] = useState(false);
   
-  // Repayment Modal State
   const [repayModal, setRepayModal] = useState(null);
   const [repayAmount, setRepayAmount] = useState('');
 
@@ -133,7 +132,6 @@ const App = () => {
     if (!user) return;
     setLoading(true);
 
-    // Fetch Transactions
     const qTrans = query(getCollectionRef(user.uid, 'transactions'));
     const unsubTrans = onSnapshot(qTrans, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -141,7 +139,6 @@ const App = () => {
       setTransactions(data);
     });
 
-    // Fetch Debts
     const qDebts = query(getCollectionRef(user.uid, 'debts'));
     const unsubDebts = onSnapshot(qDebts, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -153,7 +150,7 @@ const App = () => {
     return () => { unsubTrans(); unsubDebts(); };
   }, [user]);
 
-  // --- Handlers ---
+  // Handlers
   const handleImageUpload = async (file) => {
     if (!file) return null;
     try {
@@ -233,11 +230,11 @@ const App = () => {
   const deleteTransaction = async (id) => { if (user) await deleteDoc(getDocRef(user.uid, 'transactions', id)); };
   const deleteDebt = async (id) => { if (user) await deleteDoc(getDocRef(user.uid, 'debts', id)); };
 
-  // --- Utilities ---
+  // Utilities
   const formatCurrency = (num) => new Intl.NumberFormat('th-TH', { style: 'currency', currency: 'THB' }).format(num);
   const formatDate = (str) => new Intl.DateTimeFormat('th-TH', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(str));
 
-  // --- Dashboard Logic ---
+  // Dashboard
   const getMonthlyStats = () => {
     const stats = {};
     transactions.forEach(t => {
@@ -426,6 +423,3 @@ const App = () => {
 };
 
 export default App;
-
-
-
