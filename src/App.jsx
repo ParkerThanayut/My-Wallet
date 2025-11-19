@@ -27,7 +27,8 @@ const manualConfig = {
   projectId: "parker-wallet",
   storageBucket: "parker-wallet.firebasestorage.app",
   messagingSenderId: "275755260782",
-  appId: "1:275755260782:web:38afbe5888f006a6c2bf7f"
+  appId: "1:275755260782:web:38afbe5888f006a6c2bf7f",
+  measurementId: "G-DGL49EFNRT"
 };
 
 // 2. Logic ตรวจสอบสภาพแวดล้อม (แก้ไข App ID ให้ปลอดภัย)
@@ -425,4 +426,5 @@ const App = () => {
 };
 
 export default App;
+
 
