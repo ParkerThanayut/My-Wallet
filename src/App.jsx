@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
+// 👇 เพิ่ม Loader2 เข้ามาในบรรทัดนี้แล้วค่ะ!
 import { 
   Plus, Wallet, TrendingUp, TrendingDown, Trash2, DollarSign, Edit2, LogOut, 
   UserCircle, PieChart, FileText, Calculator, BellRing, AlertTriangle,
   Activity, Briefcase, Coffee, Home, ShoppingBag, Star, Heart, Gift, Zap,
   HandCoins, ArrowRightLeft, CheckCircle2, X, Calendar, BarChart3, Settings,
-  Filter, Download, Landmark, CreditCard
+  Filter, Download, Landmark, CreditCard, Loader2
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, LineChart, Line 
@@ -174,13 +175,8 @@ const App = () => {
   // --- Calculated Values (Smart Logic) ---
   
   // 1. Net Worth (Assets - Liabilities)
-  // Asset = Sum of all wallets
-  // Liability = Sum of payable debts
   const wealthData = useMemo(() => {
     const totalAssets = transactions.reduce((acc, t) => {
-       // ไม่รวมรายการที่เกี่ยวกับหนี้สินในการคำนวณ Asset โดยตรง เพราะเราจะดูยอดคงเหลือในกระเป๋า
-       // แต่จริงๆ แล้ว Asset คือ "เงินในกระเป๋า" ซึ่ง Transaction มันสะท้อนอยู่แล้ว
-       // โจทย์ข้อ 9: ยืมเงินมา ไม่บวกความมั่งคั่ง -> แปลว่า Net Worth = Assets - Liabilities
        return acc + (t.type === 'income' ? Number(t.amount) : -Number(t.amount));
     }, 0);
 
@@ -213,7 +209,6 @@ const App = () => {
 
   const handleImageUpload = async (file) => {
     if (!file) return null;
-    // Resize logic simplified for brevity
     try {
        const storageRef = ref(storage, `users/${user.uid}/slips/${Date.now()}_${file.name}`);
        const snapshot = await uploadBytes(storageRef, file);
@@ -331,7 +326,7 @@ const App = () => {
 
   const exportPDF = () => {
     const doc = new jsPDF();
-    doc.addFont('https://fonts.gstatic.com/s/sarabun/v13/DtVjJx26TKEr37c9aAFJn2QN.woff2', 'Sarabun', 'normal'); // ใช้ Font มาตรฐาน (อาจต้อง setup เพิ่มถ้าต้องการภาษาไทยเป๊ะๆ ใน PDF แต่อันนี้ใช้ Basic ไปก่อน)
+    doc.addFont('https://fonts.gstatic.com/s/sarabun/v13/DtVjJx26TKEr37c9aAFJn2QN.woff2', 'Sarabun', 'normal'); // ใช้ Font มาตรฐาน
     doc.text("Parker's Wallet Report", 14, 20);
     
     const tableData = transactions.map(t => [
