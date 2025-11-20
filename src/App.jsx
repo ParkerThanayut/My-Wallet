@@ -30,12 +30,13 @@ import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 // 🔑 SETTING: ใส่รหัส Firebase ของคุณตรงนี้
 // ------------------------------------------------------------------
 const manualConfig = {
-  apiKey: "AIzaSy... (ใส่รหัสยาวๆ ของคุณตรงนี้)",
+  apiKey: "AIzaSyB8hiKkgTJVd16rjosL-um4q-1ZEfcAsDQ",
   authDomain: "parker-wallet.firebaseapp.com",
   projectId: "parker-wallet",
-  storageBucket: "parker-wallet.appspot.com",
-  messagingSenderId: "...",
-  appId: "..."
+  storageBucket: "parker-wallet.firebasestorage.app",
+  messagingSenderId: "275755260782",
+  appId: "1:275755260782:web:38afbe5888f006a6c2bf7f",
+  measurementId: "G-DGL49EFNRT"
 };
 
 const isPreviewEnv = typeof __firebase_config !== 'undefined';
