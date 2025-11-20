@@ -4,7 +4,7 @@ import {
   UserCircle, PieChart, FileText, Calculator, BellRing, AlertTriangle,
   Activity, Briefcase, Coffee, Home, ShoppingBag, Star, Heart, Gift, Zap,
   HandCoins, ArrowRightLeft, CheckCircle2, X, Calendar, BarChart3, Settings,
-  Filter, Download, Landmark, CreditCard, ChevronRight, ChevronDown, FileSpreadsheet, Loader2
+  Filter, Download, Landmark, CreditCard, Loader2, RefreshCcw
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, LineChart, Line 
@@ -16,7 +16,10 @@ import { format, subMonths, startOfMonth, endOfMonth, isWithinInterval, parseISO
 import { th } from 'date-fns/locale';
 
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
+// 👇 เปลี่ยนจาก signInWithPopup เป็น signInWithRedirect และเพิ่ม getRedirectResult
+import { 
+  getAuth, signInAnonymously, onAuthStateChanged, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut 
+} from 'firebase/auth';
 import { 
   getFirestore, collection, addDoc, deleteDoc, doc, query, 
   onSnapshot, updateDoc, arrayUnion, setDoc, getDoc 
@@ -27,12 +30,12 @@ import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 // 🔑 SETTING: ใส่รหัส Firebase ของคุณตรงนี้
 // ------------------------------------------------------------------
 const manualConfig = {
-  apiKey: "AIzaSy... (ใส่รหัสยาวๆ ของคุณตรงนี้)",
+  apiKey: "AIzaSyB8hiKkgTJVd16rjosL-um4q-1ZEfcAsDQ",
   authDomain: "parker-wallet.firebaseapp.com",
   projectId: "parker-wallet",
-  storageBucket: "parker-wallet.appspot.com",
-  messagingSenderId: "...",
-  appId: "..."
+  storageBucket: "parker-wallet.firebasestorage.app",
+  messagingSenderId: "275755260782",
+  appId: "1:275755260782:web:38afbe5888f006a6c2bf7f"
 };
 
 const isPreviewEnv = typeof __firebase_config !== 'undefined';
@@ -59,7 +62,6 @@ const WALLETS_DEFAULT = [
   { id: 'ewallet', name: 'TrueMoney', type: 'ewallet', icon: Zap, color: 'bg-orange-500' }
 ];
 
-// Categories with Sub-categories
 const DEFAULT_CATEGORIES = {
   income: [
     { id: 'salary', name: 'เงินเดือน', icon: 'DollarSign', color: 'bg-blue-100 text-blue-600', subs: ['เงินเดือน', 'โบนัส', 'ค่าล่วงเวลา'] },
@@ -88,6 +90,7 @@ const App = () => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [errorMsg, setErrorMsg] = useState('');
   
   // Data
   const [transactions, setTransactions] = useState([]);
@@ -131,16 +134,41 @@ const App = () => {
   const [repayModal, setRepayModal] = useState(null);
   const [repayAmount, setRepayAmount] = useState('');
 
-  // --- Auth ---
+  // --- Auth (Redirect Mode) ---
   useEffect(() => {
-    const timer = setTimeout(() => { if (!user && loading) setLoading(false); }, 5000);
+    const checkRedirect = async () => {
+        try {
+            const result = await getRedirectResult(auth);
+            if (result) {
+                setUser(result.user);
+                setLoading(false);
+            }
+        } catch (error) {
+            console.error("Redirect Auth Error:", error);
+            setErrorMsg(error.message);
+            setLoading(false);
+        }
+    };
+    checkRedirect();
+
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
       if (u) setLoading(false);
+      else {
+          // ถ้าไม่มี user และไม่ได้กำลังโหลดจาก redirect ให้หยุดโหลด
+          setTimeout(() => setLoading(false), 2000); 
+      }
     });
-    if (!auth.currentUser) signInAnonymously(auth).catch(console.error);
-    return () => { unsubscribe(); clearTimeout(timer); };
+
+    return () => unsubscribe();
   }, []);
+
+  const handleGoogleLogin = () => {
+    setLoading(true);
+    setErrorMsg('');
+    // ใช้ signInWithRedirect แทน Popup (เสถียรกว่าบนมือถือ)
+    signInWithRedirect(auth, googleProvider);
+  };
 
   // --- Data Sync ---
   useEffect(() => {
@@ -180,7 +208,7 @@ const App = () => {
     const now = new Date();
     let startDate;
     if (dateRange === '1month') startDate = startOfMonth(now);
-    else startDate = subMonths(now, 3); // Default 3 months
+    else startDate = subMonths(now, 3);
     
     return transactions.filter(t => new Date(t.date) >= startDate);
   }, [transactions, dateRange]);
@@ -300,7 +328,36 @@ const App = () => {
   };
 
   if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-blue-600" size={48}/></div>;
-  if (!user) return <div className="h-screen flex items-center justify-center p-6"><div className="text-center"><h1 className="text-2xl font-bold mb-4">Parker's ERP</h1><button onClick={()=>signInWithPopup(auth, googleProvider)} className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg flex items-center gap-2 mx-auto"><img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-5 h-5"/> Login with Google</button></div></div>;
+  
+  // LOGIN UI
+  if (!user) return (
+    <div className="h-screen flex items-center justify-center p-6 bg-slate-50">
+      <div className="text-center bg-white p-8 rounded-3xl shadow-xl max-w-sm w-full">
+        <div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 text-blue-600">
+           <Wallet size={40}/>
+        </div>
+        <h1 className="text-2xl font-bold mb-2 text-slate-800">Parker's ERP</h1>
+        <p className="text-slate-500 mb-8 text-sm">ระบบบัญชีส่วนตัวระดับ CEO</p>
+        
+        {errorMsg && <div className="bg-red-50 text-red-500 p-3 rounded-xl text-xs mb-4 break-words">{errorMsg}</div>}
+
+        <button 
+          onClick={handleGoogleLogin} 
+          className="bg-blue-600 text-white px-6 py-4 rounded-2xl font-bold shadow-lg flex items-center justify-center gap-3 w-full hover:bg-blue-700 transition-transform active:scale-95"
+        >
+          <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-6 h-6"/> 
+          Login with Google
+        </button>
+        
+        <button 
+           onClick={() => signInAnonymously(auth).catch(alert)}
+           className="mt-4 text-xs text-slate-400 hover:text-slate-600 underline"
+        >
+           ทดลองใช้งาน (ไม่ซิงค์ข้อมูล)
+        </button>
+      </div>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-800 pb-24 md:pb-0">
